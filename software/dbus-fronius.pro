@@ -90,7 +90,8 @@ SOURCES += \
     src/solar_api_updater.cpp \
     src/data_processor.cpp \
     src/solaredge_updater.cpp \
-    src/solaredge_inverter.cpp
+    src/solaredge_inverter.cpp \
+    src/modbus_spy.cpp
 
 HEADERS += \
     src/compat.h \
@@ -124,7 +125,8 @@ HEADERS += \
     src/solar_api_updater.h \
     src/data_processor.h \
     src/solaredge_updater.h \
-    src/solaredge_inverter.h
+    src/solaredge_inverter.h \
+    src/modbus_spy.h
 
 DISTFILES += \
     ../README.md

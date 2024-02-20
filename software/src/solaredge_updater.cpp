@@ -2,6 +2,7 @@
 #include "solaredge_inverter.h"
 #include "modbus_tcp_client.h"
 #include "logging.h"
+#include "modbus_spy.h"
 
 #include <QStringList>
 
@@ -49,7 +50,11 @@ SolaredgeUpdater::SolaredgeUpdater(Inverter *inverter, InverterSettings *setting
 	SunspecUpdater(inverter, settings, parent),
 	mIncludeInitCommands(true)
 {
+	mExternalModbusRequest = std::make_shared<ExternalModbusRequest>();
 	connect(modbusClient(), SIGNAL(connected()), this, SLOT(setIncludeInitCommands()));
+	auto modbusSpy = reinterpret_cast<SolaredgeInverter*>(inverter)->modbusSpy();
+	connect(modbusSpy, SIGNAL(modbusRequest(ExternalModbusRequest)), this, SLOT(onExternalModbusRequest(ExternalModbusRequest)));
+	connect(this, SIGNAL(externalModbusReply(ExternalModbusReply)), modbusSpy, SLOT(onModbusReply(ExternalModbusReply)));
 }
 
 void SolaredgeUpdater::setIncludeInitCommands()
@@ -105,4 +110,57 @@ void SolaredgeUpdater::disablePowerLimiting()
 	};
 	writeCommands(true);
 	inverter()->setPowerLimit(deviceInfo.maxPower);
+}
+
+void SolaredgeUpdater::onExternalModbusRequest(const ExternalModbusRequest& request)
+{
+	ExternalModbusReply externalReply{.error = ModbusReply::ExceptionCode::UnsupportedFunction, .values = {},
+									  .info = ""};
+	if (mProcessExternalModbusRequest) {
+		// already busy
+		externalReply.info = mExternalModbusRequest->info().append(" - busy");
+		emit externalModbusReply(externalReply);
+		return;
+	}
+	if (!request.address || !request.size) {
+		externalReply.info = request.info().append(" - invalid address/size");
+		emit externalModbusReply(externalReply);
+		return;
+	}
+	mProcessExternalModbusRequest = true;
+	*mExternalModbusRequest = request;
+}
+
+void SolaredgeUpdater::onExternalModbusRequestCompleted()
+{
+	ModbusReply *reply = static_cast<ModbusReply *>(sender());
+	reply->deleteLater();
+	ExternalModbusReply externalReply{.error = reply->error(), .values = reply->registers(),
+									  .info = mExternalModbusRequest->info().append(" - ")};
+	if (reply->error())
+		externalReply.info.append(reply->toString().trimmed());
+	else
+		externalReply.info.append("succeeded");
+	emit externalModbusReply(externalReply);
+	mProcessExternalModbusRequest = false;
+	SunspecUpdater::readPowerAndVoltage();
+}
+
+void SolaredgeUpdater::readPowerAndVoltage()
+{
+	// Process ModbusSpy stuff first (if any), then continue as normal
+	if (mProcessExternalModbusRequest) {
+		const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+		const auto& req = *mExternalModbusRequest;
+		if (req.type == ExternalModbusRequest::Type::Read) {
+			ModbusReply *reply = modbusClient()->readHoldingRegisters(deviceInfo.networkId, req.address, req.size);
+			connect(reply, SIGNAL(finished()), this, SLOT(onExternalModbusRequestCompleted()));
+			return; // SunspecUpdater::readPowerAndVoltage() at end of onExternalModbusRequestCompleted()
+		} else if (req.type == ExternalModbusRequest::Type::Write) {
+			ModbusReply *reply = modbusClient()->writeMultipleHoldingRegisters(deviceInfo.networkId, req.address, req.values);
+			connect(reply, SIGNAL(finished()), this, SLOT(onExternalModbusRequestCompleted()));
+			return; // SunspecUpdater::readPowerAndVoltage() at end of onExternalModbusRequestCompleted()
+		}
+	}
+	SunspecUpdater::readPowerAndVoltage();
 }

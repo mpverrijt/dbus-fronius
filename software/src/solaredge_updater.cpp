@@ -1,0 +1,108 @@
+#include "solaredge_updater.h"
+#include "solaredge_inverter.h"
+#include "modbus_tcp_client.h"
+#include "logging.h"
+
+#include <QStringList>
+
+// Extended classes relating to SolarEdge specific updating
+// ========================================================
+enum PowerControl : uint16_t {
+	// Commit / Restore
+	CommitPowerControlSettings = 0xF100,         //   Int16,              ?,     [-]  (Execute = 1)
+	RestorePowerControlDefaultSettings = 0xF101, //   Int16,              ?,     [-]  (Execute = 1)
+
+	// Global Dynamic Power Control (GDPC) Active & Reactive
+	AdvancedPowerControlEnable = 0xF142,         //   Int32,          0 - 1,     [-]
+
+	// GDPC - Active
+	ActivePowerLimit = 0xF001,                   //  Uint16,        0 - 100,     [%]
+
+	// GDPC - Reactive
+	/* add if/when needed */
+
+	// Enhanced Dynamic Power Control (EDPC) Active & Reactive
+	EnableDynamicPowerControl = 0xF300,          //  Uint16,          0 - 1,     [-]
+	CommandTimeout = 0xF310,                     //  Uint32, 0 - MAX_UINT32,     [s]  (Default = 60)
+
+	// EDPC - Active
+	FallbackActivePowerLimit = 0xF312,           // Float32,        0 - 100,     [%]  (Default = 100)
+	ActivePowerRampUpRate = 0xF318,              // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
+	ActivePowerRampDownRate = 0xF31A,            // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
+	DynamicActivePowerLimit = 0xF322,            // Float32,        0 - 100,     [%]
+
+	// EDPC - Reactive
+	/* add if/when needed */
+};
+
+static constexpr float FallbackActivePowerLimitValue = 100; // [%] For timeout on inverter (e.g. communication failure)
+static constexpr float PowerLimitDisableValue = 100;        // [%] For timeout on updating powerLimit (venus-os)
+
+template <typename T, typename std::enable_if<std::is_arithmetic<T>::value, bool>::type = true>
+QVector<uint16_t> toWords(T value) {
+	QVector<uint16_t> words((sizeof(T)+1)/2);
+	memcpy(words.data(), &value, sizeof(T));
+	return words;
+}
+
+SolaredgeUpdater::SolaredgeUpdater(Inverter *inverter, InverterSettings *settings, QObject *parent):
+	SunspecUpdater(inverter, settings, parent),
+	mIncludeInitCommands(true)
+{
+	connect(modbusClient(), SIGNAL(connected()), this, SLOT(setIncludeInitCommands()));
+}
+
+void SolaredgeUpdater::setIncludeInitCommands()
+{
+	mIncludeInitCommands = true;
+}
+
+void SolaredgeUpdater::writeCommands(bool firstCommand)
+{
+	if (!firstCommand) {
+		ModbusReply *previousReply = static_cast<ModbusReply *>(sender());
+		previousReply->deleteLater();
+	}
+
+	if (mCommands.isEmpty())
+		return;
+
+	auto cmd = mCommands.takeFirst();
+	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+	ModbusReply *reply = modbusClient()->writeMultipleHoldingRegisters(deviceInfo.networkId, cmd.first, cmd.second);
+
+	// Use original onWriteCompleted when all commands are done
+	if (mCommands.isEmpty())
+		connect(reply, SIGNAL(finished()), this, SLOT(onWriteCompleted()));
+	else
+		connect(reply, SIGNAL(finished()), this, SLOT(writeCommands()));
+}
+
+void SolaredgeUpdater::writePowerLimit(double powerLimitPct)
+{
+	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+	mCommands = {
+		{DynamicActivePowerLimit,   toWords(static_cast<float>(powerLimitPct * deviceInfo.powerLimitScale))}
+	};
+	if (mIncludeInitCommands) {
+		mIncludeInitCommands = false;
+		mCommands.append({ActivePowerRampUpRate,     toWords(static_cast<float>(-1))});
+		mCommands.append({ActivePowerRampDownRate,   toWords(static_cast<float>(-1))});
+		mCommands.append({FallbackActivePowerLimit,  toWords(FallbackActivePowerLimitValue)});
+		mCommands.append({CommandTimeout,            toWords(static_cast<uint32_t>(PowerLimitTimeout))});
+		mCommands.append({EnableDynamicPowerControl, {1}});
+	}
+	writeCommands(true);
+}
+
+void SolaredgeUpdater::disablePowerLimiting()
+{
+	// Cancel limiter by setting DynamicActivePowerLimit to 100 [%].
+	// This will cause the inverter to go to full power.
+	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+	mCommands = {
+		{DynamicActivePowerLimit, toWords(PowerLimitDisableValue)}
+	};
+	writeCommands(true);
+	inverter()->setPowerLimit(deviceInfo.maxPower);
+}

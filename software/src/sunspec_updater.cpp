@@ -15,7 +15,7 @@
 // The PV inverter will reset the power limit to maximum after this interval. The reset will cause
 // the power of the inverter to increase (or stay at its current value), so a large value for the
 // timeout is pretty safe.
-static const int PowerLimitTimeout = 120;
+const int PowerLimitTimeout = 120;
 // This value used to be bigger to prevent old Fronius firmware from running (the resolution of
 // the power limiter was 1%. New Versions support precision of 0.01%. However, since a change in
 // the algorithm in hub4control, 1% should only work.
@@ -242,6 +242,11 @@ void SunspecUpdater::onTimer()
 
 void SunspecUpdater::onPowerLimitExpired()
 {
+	disablePowerLimiting();
+}
+
+void SunspecUpdater::disablePowerLimiting()
+{
 	// Cancel limiter by resetting WMaxLim_Ena to zero.  Depending on the
 	// PV-inverter and its configuration, this will either cause it to go to
 	// full power, or to go to zero.
@@ -437,6 +442,10 @@ void Sunspec2018Updater::readPowerAndVoltage()
 void Sunspec2018Updater::writePowerLimit(double powerLimitPct)
 {
 	Q_UNUSED(powerLimitPct);
+}
+
+void Sunspec2018Updater::disablePowerLimiting()
+{
 }
 
 bool Sunspec2018Updater::parsePowerAndVoltage(QVector<quint16> values)

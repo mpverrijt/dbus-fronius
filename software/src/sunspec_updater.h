@@ -13,6 +13,8 @@ class ModbusReply;
 class ModbusTcpClient;
 class QTimer;
 
+extern const int PowerLimitTimeout;
+
 class SunspecUpdater: public QObject
 {
 	Q_OBJECT
@@ -50,11 +52,15 @@ protected:
 
 	virtual void writePowerLimit(double powerLimitPct);
 
+	virtual void disablePowerLimiting();
+
 	virtual bool parsePowerAndVoltage(QVector<quint16> values);
 
 	Inverter *inverter() { return mInverter; }
 
 	InverterSettings *settings() { return mSettings; }
+
+	ModbusTcpClient *modbusClient() { return mModbusClient; }
 
 	DataProcessor *processor() { return mDataProcessor; }
 
@@ -125,6 +131,8 @@ private:
 	void readPowerAndVoltage() override;
 
 	void writePowerLimit(double powerLimitPct) override;
+
+	void disablePowerLimiting() override;
 
 	bool parsePowerAndVoltage(QVector<quint16> values) override;
 };

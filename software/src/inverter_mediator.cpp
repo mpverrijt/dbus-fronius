@@ -2,9 +2,11 @@
 #include "defines.h"
 #include "inverter.h"
 #include "fronius_inverter.h"
+#include "solaredge_inverter.h"
 #include "gateway_interface.h"
 #include "inverter_mediator.h"
 #include "sunspec_updater.h"
+#include "solaredge_updater.h"
 #include "inverter_settings.h"
 #include "solar_api_updater.h"
 #include "settings.h"
@@ -190,6 +192,11 @@ void InverterMediator::startAcquisition()
 		FroniusSunspecUpdater *updater = new FroniusSunspecUpdater(mInverter, mInverterSettings, mInverter);
 		connect(updater, SIGNAL(connectionLost()), this, SLOT(onConnectionLost()));
 		connect(updater, SIGNAL(inverterModelChanged()), this, SLOT(onInverterModelChanged()));
+	} else if (mDeviceInfo.productId == VE_PROD_ID_PV_INVERTER_SUNSPEC &&
+				mDeviceInfo.productName.startsWith("SolarEdge")) {
+		SolaredgeUpdater *updater = new SolaredgeUpdater(mInverter, mInverterSettings, mInverter);
+		connect(updater, SIGNAL(connectionLost()), this, SLOT(onConnectionLost()));
+		connect(updater, SIGNAL(inverterModelChanged()), this, SLOT(onInverterModelChanged()));
 	} else {
 		SunspecUpdater *updater = new SunspecUpdater(mInverter, mInverterSettings, mInverter);
 		connect(updater, SIGNAL(connectionLost()), this, SLOT(onConnectionLost()));
@@ -212,6 +219,9 @@ Inverter *InverterMediator::createInverter()
 		inverter = new FroniusInverter(root, mDeviceInfo, deviceInstance, this);
 	} else if (mDeviceInfo.productId == VE_PROD_ID_PV_INVERTER_ABB) {
 		inverter = new ThrottledInverter(root, mDeviceInfo, deviceInstance, this);
+	} else if (mDeviceInfo.productId == VE_PROD_ID_PV_INVERTER_SUNSPEC &&
+				mDeviceInfo.productName.startsWith("SolarEdge")) {
+		inverter = new SolaredgeInverter(root, mDeviceInfo, deviceInstance, this);
 	} else {
 		inverter = new Inverter(root, mDeviceInfo, deviceInstance, this);
 	}

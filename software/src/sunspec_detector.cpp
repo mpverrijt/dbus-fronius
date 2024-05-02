@@ -89,6 +89,15 @@ void SunspecDetector::onFinished()
 	case Reply::ModuleHeader:
 	{
 		if (values.size() < 2) {
+			// If we get a short frame, it means there was an error reading
+			// something. As long as we have enough to keep going, call
+			// setResult anyway. This helps SMA inverters which errors
+			// when reading one register past the end, instead of returning
+			// 0xFFFF as most other implementations do.
+			if ( !di->di.productName.isEmpty() && // Model 1 is present
+					di->di.phaseCount > 0 && // Model 1xx present
+					di->di.networkId > 0)
+				di->setResult();
 			setDone(di);
 			return;
 		}
@@ -126,8 +135,14 @@ void SunspecDetector::onFinished()
 			di->state = Reply::ModuleContent;
 			break;
 		case 123: // Immediate controls
-			di->di.immediateControlOffset = di->currentRegister;
-			di->state = Reply::ModuleContent;
+			// SMA is always breaking model 123. Let's completely ignore
+			// model 123 to prevent issues with unreadable registers.
+			// Since model 1 always comes first, the productId will
+			// already be populated.
+			if (di->di.productId != VE_PROD_ID_PV_INVERTER_SMA) {
+				di->di.immediateControlOffset = di->currentRegister;
+				di->state = Reply::ModuleContent;
+			}
 			break;
 		case 0xFFFF:
 			if ( !di->di.productName.isEmpty() && // Model 1 is present

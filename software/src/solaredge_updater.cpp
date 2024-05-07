@@ -86,6 +86,11 @@ void SolaredgeUpdater::writePowerLimit(double powerLimitPct)
 	};
 	if (mIncludeInitCommands) {
 		mIncludeInitCommands = false;
+		// Set ramp rates to 100 first and then to -1/disable.
+		// Last firmware for inverters with display (3.2537) doesn't allow -1/disable:
+		//   - It will then stay at 100 [%/min] (fastest setting possible) for these inverters.
+		mCommands.append({ActivePowerRampUpRate,     toWords(static_cast<float>(100))});
+		mCommands.append({ActivePowerRampDownRate,   toWords(static_cast<float>(100))});
 		mCommands.append({ActivePowerRampUpRate,     toWords(static_cast<float>(-1))});
 		mCommands.append({ActivePowerRampDownRate,   toWords(static_cast<float>(-1))});
 		mCommands.append({FallbackActivePowerLimit,  toWords(FallbackActivePowerLimitValue)});

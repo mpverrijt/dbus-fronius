@@ -27,6 +27,7 @@ enum PowerControl : uint16_t {
 	CommandTimeout = 0xF310,                     //  Uint32, 0 - MAX_UINT32,     [s]  (Default = 60)
 
 	// EDPC - Active
+	MaxActivePower = 0xF304,                     // Float32,     Inv rating,     [W]
 	FallbackActivePowerLimit = 0xF312,           // Float32,        0 - 100,     [%]  (Default = 100)
 	ActivePowerRampUpRate = 0xF318,              // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
 	ActivePowerRampDownRate = 0xF31A,            // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
@@ -52,6 +53,7 @@ SolaredgeUpdater::SolaredgeUpdater(Inverter *inverter, InverterSettings *setting
 {
 	mExternalModbusRequest = std::make_shared<ExternalModbusRequest>();
 	connect(modbusClient(), SIGNAL(connected()), this, SLOT(setIncludeInitCommands()));
+	connect(modbusClient(), SIGNAL(connected()), this, SLOT(readMaxPower()));
 	auto modbusSpy = reinterpret_cast<SolaredgeInverter*>(inverter)->modbusSpy();
 	connect(modbusSpy, SIGNAL(modbusRequest(ExternalModbusRequest)), this, SLOT(onExternalModbusRequest(ExternalModbusRequest)));
 	connect(this, SIGNAL(externalModbusReply(ExternalModbusReply)), modbusSpy, SLOT(onModbusReply(ExternalModbusReply)));
@@ -91,6 +93,11 @@ void SolaredgeUpdater::writePowerLimit(double powerLimitPct)
 	};
 	if (mIncludeInitCommands) {
 		mIncludeInitCommands = false;
+		// Set ramp rates to 100 first and then to -1/disable.
+		// Last firmware for inverters with display (3.2537) doesn't allow -1/disable:
+		//   - It will then stay at 100 [%/min] (fastest setting possible) for these inverters.
+		mCommands.append({ActivePowerRampUpRate,     toWords(static_cast<float>(100))});
+		mCommands.append({ActivePowerRampDownRate,   toWords(static_cast<float>(100))});
 		mCommands.append({ActivePowerRampUpRate,     toWords(static_cast<float>(-1))});
 		mCommands.append({ActivePowerRampDownRate,   toWords(static_cast<float>(-1))});
 		mCommands.append({FallbackActivePowerLimit,  toWords(FallbackActivePowerLimitValue)});
@@ -110,6 +117,31 @@ void SolaredgeUpdater::disablePowerLimiting()
 	};
 	writeCommands(true);
 	inverter()->setPowerLimit(deviceInfo.maxPower);
+}
+
+void SolaredgeUpdater::readMaxPower()
+{
+	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+	if (deviceInfo.maxPower == 0) {
+		ModbusReply *reply = modbusClient()->readHoldingRegisters(deviceInfo.networkId, MaxActivePower, 2);
+		connect(reply, SIGNAL(finished()), this, SLOT(onReadMaxPowerCompleted()));
+	}
+}
+
+void SolaredgeUpdater::onReadMaxPowerCompleted()
+{
+	ModbusReply *reply = static_cast<ModbusReply *>(sender());
+	reply->deleteLater();
+	if (!reply->error()) {
+		QVector <quint16> words = reply->registers();
+		auto value = static_cast<double>(*reinterpret_cast<float *>(words.data()));
+		if (value > 0) {
+			auto seInverter = reinterpret_cast<SolaredgeInverter *>(inverter());
+			qInfo() << "Setting 'Ac/MaxPower' and 'Ac/PowerLimit' for SolarEdge Inverter to" << value;
+			seInverter->setMaxPower(value);
+			seInverter->setPowerLimit(value);
+		}
+	}
 }
 
 void SolaredgeUpdater::onExternalModbusRequest(const ExternalModbusRequest& request)

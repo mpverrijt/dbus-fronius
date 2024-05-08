@@ -11,9 +11,13 @@ class SolaredgeInverter : public Inverter
 public:
 	SolaredgeInverter(VeQItem *root, const DeviceInfo &deviceInfo, int deviceInstance, QObject *parent = 0);
 
+	void setMaxPower(double p);
+
 	ModbusSpy* modbusSpy() { return mModbusSpy; };
 
 private:
+	DeviceInfo& mDevInfo;
+	VeQItem *mMaxPower;
 	ModbusSpy *mModbusSpy;
 };
 

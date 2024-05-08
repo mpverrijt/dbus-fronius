@@ -21,6 +21,10 @@ private slots:
 
 	void setIncludeInitCommands();
 
+	void readMaxPower();
+
+	void onReadMaxPowerCompleted();
+
 	void onExternalModbusRequest(const ExternalModbusRequest& request);
 
 	void onExternalModbusRequestCompleted();

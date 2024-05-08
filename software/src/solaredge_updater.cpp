@@ -26,6 +26,7 @@ enum PowerControl : uint16_t {
 	CommandTimeout = 0xF310,                     //  Uint32, 0 - MAX_UINT32,     [s]  (Default = 60)
 
 	// EDPC - Active
+	MaxActivePower = 0xF304,                     // Float32,     Inv rating,     [W]
 	FallbackActivePowerLimit = 0xF312,           // Float32,        0 - 100,     [%]  (Default = 100)
 	ActivePowerRampUpRate = 0xF318,              // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
 	ActivePowerRampDownRate = 0xF31A,            // Float32,        0 - 100, [%/min]  (Default = 5, Disable = -1)
@@ -50,6 +51,7 @@ SolaredgeUpdater::SolaredgeUpdater(Inverter *inverter, InverterSettings *setting
 	mIncludeInitCommands(true)
 {
 	connect(modbusClient(), SIGNAL(connected()), this, SLOT(setIncludeInitCommands()));
+	connect(modbusClient(), SIGNAL(connected()), this, SLOT(readMaxPower()));
 }
 
 void SolaredgeUpdater::setIncludeInitCommands()
@@ -110,4 +112,29 @@ void SolaredgeUpdater::disablePowerLimiting()
 	};
 	writeCommands(true);
 	inverter()->setPowerLimit(deviceInfo.maxPower);
+}
+
+void SolaredgeUpdater::readMaxPower()
+{
+	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
+	if (deviceInfo.maxPower == 0) {
+		ModbusReply *reply = modbusClient()->readHoldingRegisters(deviceInfo.networkId, MaxActivePower, 2);
+		connect(reply, SIGNAL(finished()), this, SLOT(onReadMaxPowerCompleted()));
+	}
+}
+
+void SolaredgeUpdater::onReadMaxPowerCompleted()
+{
+	ModbusReply *reply = static_cast<ModbusReply *>(sender());
+	reply->deleteLater();
+	if (!reply->error()) {
+		QVector <quint16> words = reply->registers();
+		auto value = static_cast<double>(*reinterpret_cast<float *>(words.data()));
+		if (value > 0) {
+			auto seInverter = reinterpret_cast<SolaredgeInverter *>(inverter());
+			qInfo() << "Setting 'Ac/MaxPower' and 'Ac/PowerLimit' for SolarEdge Inverter to" << value;
+			seInverter->setMaxPower(value);
+			seInverter->setPowerLimit(value);
+		}
+	}
 }

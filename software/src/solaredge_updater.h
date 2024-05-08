@@ -14,6 +14,10 @@ private slots:
 
 	void setIncludeInitCommands();
 
+	void readMaxPower();
+
+	void onReadMaxPowerCompleted();
+
 private:
 	void writePowerLimit(double powerLimitPct) override;
 

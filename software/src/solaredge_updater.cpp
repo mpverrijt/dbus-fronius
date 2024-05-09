@@ -98,6 +98,7 @@ void SolaredgeUpdater::writePowerLimit(double powerLimitPct)
 		mCommands.append({FallbackActivePowerLimit,  toWords(FallbackActivePowerLimitValue)});
 		mCommands.append({CommandTimeout,            toWords(static_cast<uint32_t>(PowerLimitTimeout))});
 		mCommands.append({EnableDynamicPowerControl, {1}});
+		qInfo() << "Writing EDPC settings to SolarEdge Inverter:" << inverter()->location();
 	}
 	writeCommands(true);
 }
@@ -132,7 +133,7 @@ void SolaredgeUpdater::onReadMaxPowerCompleted()
 		auto value = static_cast<double>(*reinterpret_cast<float *>(words.data()));
 		if (value > 0) {
 			auto seInverter = reinterpret_cast<SolaredgeInverter *>(inverter());
-			qInfo() << "Setting 'Ac/MaxPower' and 'Ac/PowerLimit' for SolarEdge Inverter to" << value;
+			qInfo() << "Setting 'Ac/MaxPower' and 'Ac/PowerLimit' to" << value << "for SolarEdge Inverter:" << seInverter->location();
 			seInverter->setMaxPower(value);
 			seInverter->setPowerLimit(value);
 		}

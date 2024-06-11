@@ -1,0 +1,1 @@
+mount -o ro,bind /data/dbus-fronius /opt/victronenergy/dbus-fronius/dbus-fronius

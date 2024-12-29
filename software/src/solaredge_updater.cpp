@@ -118,10 +118,10 @@ void SolaredgeUpdater::disablePowerLimiting()
 void SolaredgeUpdater::readMaxPower()
 {
 	const DeviceInfo &deviceInfo = inverter()->deviceInfo();
-	if (deviceInfo.maxPower == 0) {
+//	if (deviceInfo.maxPower == 0) {
 		ModbusReply *reply = modbusClient()->readHoldingRegisters(deviceInfo.networkId, MaxActivePower, 2);
 		connect(reply, SIGNAL(finished()), this, SLOT(onReadMaxPowerCompleted()));
-	}
+//	}
 }
 
 void SolaredgeUpdater::onReadMaxPowerCompleted()
